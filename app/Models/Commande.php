@@ -10,21 +10,24 @@ class Commande extends Model
     use HasFactory;
 
     protected $fillable = [
-        'client_id',
-        'type_id',
-        'date',
-        'quantity',
-        'unit_price',
-        'total_amount',
-        'paid_amount',
-        'rest',
-        'status',
-    ];
+    'client_id',
+    'type_id',
+    'date',
+    'subtotal',
+    'previous_balance',
+    'total_due',
+    'status',
+];
 
-   
+
     public function client()
     {
         return $this->belongsTo(Client::class);
+    }
+
+    public function items()
+    {
+        return $this->hasMany(CommandeItem::class);
     }
 
  

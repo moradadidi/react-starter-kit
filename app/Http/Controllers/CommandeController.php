@@ -4,129 +4,141 @@ namespace App\Http\Controllers;
 
 use App\Models\Commande;
 use App\Models\Client;
+use App\Models\CommandeItem;
 use App\Models\Type;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Redirect;
-use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Controller;
 use Inertia\Inertia;
+
 class CommandeController extends Controller
 {
-    /**
-     * Display a listing of the orders.
-     */
     public function index()
     {
-        $commandes = Commande::with(['client', 'type'])->get(); // Include related clients and types for display
+        $commandes = Commande::with(['client', 'items', 'type'])->get();
+        // dd($commandes);
         return Inertia::render('commandes/index', compact('commandes'));
     }
 
-    /**
-     * Show the form for creating a new order.
-     */
-    public function create()
-    {
-        $clients = Client::all(); 
-        $types = Type::all(); 
-        return Inertia::render('commandes/create', compact( 'clients', 'types'));
-    }
 
-    /**
-     * Store a newly created order in the database.
-     */
+public function create()
+{
+    $clients = Client::all();
+    $types = Type::all();
+
+    return Inertia::render('commandes/create', [
+        'clients' => $clients,
+        'types' => $types,
+    ]);
+}
+
+
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), [
+        $data = $request->validate([
             'client_id' => 'required|exists:clients,id',
             'type_id' => 'required|exists:types,id',
             'date' => 'required|date',
-            'quantity' => 'required|integer|min:1',
-            'unit_price' => 'required|numeric|min:0',
             'status' => 'required|string',
+            'items' => 'required|array|min:1',
+            'items.*.designation' => 'required|string',
+            'items.*.quantity' => 'required|integer|min:1',
+            'items.*.unit_price' => 'required|numeric|min:0',
         ]);
 
-        if ($validator->fails()) {
-            return redirect()->route('commandes.create')
-                ->withErrors($validator)
-                ->withInput();
+        $subtotal = collect($data['items'])->sum(function ($item) {
+            return $item['quantity'] * $item['unit_price'];
+        });
+
+        $total_due = $subtotal + ($data['previous_balance'] ?? 0);
+
+        $commande = Commande::create([
+            'client_id' => $data['client_id'],
+            'type_id' => $data['type_id'], // ✅ Add this line
+            'date' => $data['date'],
+            'subtotal' => $subtotal,
+            'previous_balance' => $data['previous_balance'] ?? 0,
+            'total_due' => $total_due,
+            'status' => $data['status'], // ✅ Include status if needed
+        ]);
+        
+
+        foreach ($data['items'] as $item) {
+            $commande->items()->create([
+                'part_name' => $item['designation'], // use 'designation' here
+                'quantity' => $item['quantity'],
+                'rate' => $item['unit_price'],
+                'total' => $item['quantity'] * $item['unit_price'],
+            ]);
+            
         }
 
-        $totalAmount = $request->quantity * $request->unit_price;
-
-        Commande::create([
-            'client_id' => $request->client_id,
-            'type_id' => $request->type_id,
-            'date' => $request->date,
-            'quantity' => $request->quantity,
-            'unit_price' => $request->unit_price,
-            'total_amount' => $totalAmount,
-            'paid_amount' => 0, 
-            'rest' => $totalAmount, 
-            'status' => $request->status,
-        ]);
-        
-
-        
-        return Redirect::route('commandes.index')->with('success', 'Order created successfully!');
+        return redirect()->route('commandes.index')->with('success', 'Commande enregistrée avec succès!');
     }
 
-    /**
-     * Show the form for editing the specified order.
-     */
     public function edit($id)
     {
-        $commande = Commande::findOrFail($id); 
-        $clients = Client::all(); 
-        $types = Type::all(); 
-        return Inertia::render('commandes/edit', compact(  'commande', 'clients', 'types'));
+        $commande = Commande::with('items')->findOrFail($id);
+        $clients = Client::all();
+        $types = Type::all();
+        return Inertia::render('commandes/edit', compact('commande', 'clients', 'types'));
     }
 
-    /**
-     * Update the specified order in the database.
-     */
     public function update(Request $request, $id)
     {
-        $validator = Validator::make($request->all(), [
-            'client_id' => 'required|exists:clients,id',
-            'type_id' => 'required|exists:types,id',
-            'date' => 'required|date',
-            'quantity' => 'required|integer|min:1',
-            'unit_price' => 'required|numeric|min:0',
-            'status' => 'required|string',
-        ]);
-
-        if ($validator->fails()) {
-            return redirect()->route('commandes.edit', ['commande' => $id])
-                ->withErrors($validator)
-                ->withInput();
-        }
-
-        $totalAmount = $request->quantity * $request->unit_price;
-
         $commande = Commande::findOrFail($id);
-        $commande->update([
-            'client_id' => $request->client_id,
-            'type_id' => $request->type_id,
-            'date' => $request->date,
-            'quantity' => $request->quantity,
-            'unit_price' => $request->unit_price,
-            'total_amount' => $totalAmount,
-            'paid_amount' => $commande->paid_amount, 
-            'rest' => $totalAmount - $commande->paid_amount, 
-            'status' => $request->status,
+    
+        $data = $request->validate([
+            'client_id' => 'required|exists:clients,id',
+            'date' => 'required|date',
+            'previous_balance' => 'nullable|numeric',
+            'items' => 'required|array|min:1',
+            'items.*.designation' => 'required|string', // changed part_name to designation
+            'items.*.quantity' => 'required|numeric|min:0',
+            'items.*.unit_price' => 'required|numeric|min:0', // changed rate to unit_price
         ]);
-
-        return Redirect::route('commandes.index')->with('success', 'Order updated successfully!');
+    
+        $subtotal = collect($data['items'])->sum(function ($item) {
+            return $item['quantity'] * $item['unit_price']; // updated to match input name
+        });
+    
+        $total_due = $subtotal + ($data['previous_balance'] ?? 0);
+    
+        $commande->update([
+            'client_id' => $data['client_id'],
+            'date' => $data['date'],
+            'subtotal' => $subtotal,
+            'previous_balance' => $data['previous_balance'] ?? 0,
+            'total_due' => $total_due,
+        ]);
+    
+        // Delete the existing items before adding the updated ones
+        $commande->items()->delete();
+    
+        foreach ($data['items'] as $item) {
+            $commande->items()->create([
+                'part_name' => $item['designation'], // used designation instead of part_name
+                'quantity' => $item['quantity'],
+                'rate' => $item['unit_price'], // used unit_price instead of rate
+                'total' => $item['quantity'] * $item['unit_price'], // correctly calculate total
+            ]);
+        }
+    
+        return redirect()->route('commandes.index')->with('success', 'Commande mise à jour avec succès!');
     }
+    
 
-    /**
-     * Remove the specified order from the database.
-     */
     public function destroy($id)
     {
+        // Find the Commande by ID
         $commande = Commande::findOrFail($id);
+    
+        // Delete the related items first
+        $commande->items()->delete();
+    
+        // Now delete the Commande
         $commande->delete();
-
-        return Redirect::route('commandes.index')->with('success', 'Order deleted successfully!');
+    
+        // Redirect with a success message
+        return redirect()->route('commandes.index')->with('success', 'Commande supprimée avec succès!');
     }
+    
 }

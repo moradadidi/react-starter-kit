@@ -67,6 +67,25 @@
   If we ever want to remove these styles, we need to add an explicit border
   color utility to any element that depends on these defaults.
 */
+.receipt-print * {
+    color: black !important;
+    background-color: white !important;
+  }
+  
+/* resources/css/receipt.css */
+.receipt-print {
+    background-color: white !important;
+    color: black !important;
+    font-family: Arial, sans-serif !important;
+  }
+  
+  .receipt-print * {
+    background-color: white !important;
+    color: black !important;
+    fill: black !important;
+    stroke: black !important;
+    box-shadow: none !important;
+  }
 @layer base {
     *,
     ::after,
@@ -157,18 +176,4 @@
         @apply bg-background text-foreground;
     }
 }
-
-/* resources/css/receipt.css */
-.receipt-print {
-    background-color: white !important;
-    color: black !important;
-    font-family: Arial, sans-serif !important;
-  }
-  
-  .receipt-print * {
-    background-color: white !important;
-    color: black !important;
-    fill: black !important;
-    stroke: black !important;
-    box-shadow: none !important;
-  }
+/* tailwind.css or globals.css */
